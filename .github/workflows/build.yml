@@ -1,109 +1,186 @@
-name: CI
+name: Build iOS IPA
 
 on:
-  push:
-    branches: [ master ]
-
   workflow_dispatch:
+    inputs:
+      app_name:
+        description: "Название приложения (App Name, e.g. MyTelegram)"
+        required: true
+        default: "MyTelegram"
+        type: string
+      avatar_url:
+        description: "Ссылка на аватарку в любом формате (PNG, JPG, WebP, SVG, GIF...)"
+        required: true
+        type: string
+      server_ip:
+        description: "IP приватного сервера (Server IP, e.g. 192.168.1.100)"
+        required: true
+        type: string
+      server_port:
+        description: "Порт сервера (Server Port, e.g. 443)"
+        required: true
+        default: "443"
+        type: string
+      rsa_public_key:
+        description: "MTProto RSA публичный ключ сервера (PEM)"
+        required: true
+        type: string
+      api_id:
+        description: "API ID (опционально, оставьте пустым для дефолтного)"
+        required: false
+        default: ""
+        type: string
+      api_hash:
+        description: "API Hash (опционально, оставьте пустым для дефолтного)"
+        required: false
+        default: ""
+        type: string
+      bundle_id:
+        description: "Bundle ID (e.g. org.telegram.custom, com.myserver.app)"
+        required: true
+        default: "ph.telegra.Telegraph"
+        type: string
+      domain:
+        description: "Домен везде (e.g. t.me, mydomain.com)"
+        required: true
+        default: "t.me"
+        type: string
 
 jobs:
   build:
-    runs-on: macos-13
+    runs-on: macos-14
 
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          submodules: 'recursive'
-          fetch-depth: '0'
+          submodules: "recursive"
+          fetch-depth: "0"
 
-      - name: Set active Xcode path
+      - name: Select Xcode version
         run: |
-          XCODE_VERSION=$(cat versions.json | python3 -c 'import json,sys;obj=json.load(sys.stdin);print(obj["xcode"]);')
-          sudo xcode-select -s /Applications/Xcode_$XCODE_VERSION.app/Contents/Developer
+          XCODE_VERSION=$(cat versions.json | python3 -c 'import json,sys;obj=json.load(sys.stdin);print(obj.get("xcode", ""));')
+          if [ -d "/Applications/Xcode_${XCODE_VERSION}.app" ]; then
+            sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer"
+          elif [ -d "/Applications/Xcode.app" ]; then
+            sudo xcode-select -s "/Applications/Xcode.app/Contents/Developer"
+          fi
+          xcodebuild -version
+
+      - name: Ensure ImageMagick is available
+        run: |
+          which magick || brew install imagemagick
 
       - name: Create canonical source directory
         run: |
           set -x
           sudo mkdir -p /Users/Shared
-          cp -R $GITHUB_WORKSPACE /Users/Shared/
-          mv /Users/Shared/$(basename $GITHUB_WORKSPACE) /Users/Shared/telegram-ios
+          cp -R "$GITHUB_WORKSPACE" /Users/Shared/
+          mv /Users/Shared/$(basename "$GITHUB_WORKSPACE") /Users/Shared/telegram-ios
+
+      - name: Configure Custom Server & Branding
+        env:
+          APP_NAME: ${{ inputs.app_name }}
+          AVATAR_URL: ${{ inputs.avatar_url }}
+          SERVER_IP: ${{ inputs.server_ip }}
+          SERVER_PORT: ${{ inputs.server_port }}
+          RSA_PUBLIC_KEY: ${{ inputs.rsa_public_key }}
+          API_ID: ${{ inputs.api_id }}
+          API_HASH: ${{ inputs.api_hash }}
+          BUNDLE_ID: ${{ inputs.bundle_id }}
+          DOMAIN: ${{ inputs.domain }}
+        run: |
+          cd /Users/Shared/telegram-ios
+          python3 scripts/configure_xirogram.py
 
       - name: Build the App
         run: |
           set -x
 
-          # source code paths are included in the final binary, so we need to make them stable across builds
           SOURCE_DIR=/Users/Shared/telegram-ios
-
-          # use canonical bazel root
           BAZEL_USER_ROOT="/private/var/tmp/_bazel_containerhost"
 
           cd $SOURCE_DIR
 
-          BUILD_NUMBER_OFFSET="$(cat build_number_offset)"
+          BUILD_NUMBER_OFFSET="$(cat build_number_offset 2>/dev/null || echo 0)"
 
           export APP_VERSION=$(cat versions.json | python3 -c 'import json,sys;obj=json.load(sys.stdin);print(obj["app"]);')
-          export COMMIT_COUNT=$(git rev-list --count HEAD)
+          export COMMIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo 1)
           export COMMIT_COUNT="$(($COMMIT_COUNT+$BUILD_NUMBER_OFFSET))"
           export BUILD_NUMBER="$COMMIT_COUNT"
-          echo "BUILD_NUMBER=$(echo $BUILD_NUMBER)" >> $GITHUB_ENV
-          echo "APP_VERSION=$(echo $APP_VERSION)" >> $GITHUB_ENV
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_ENV
+          echo "APP_VERSION=$APP_VERSION" >> $GITHUB_ENV
 
           python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
           python3 -u build-system/Make/Make.py \
             --bazelUserRoot="$BAZEL_USER_ROOT" \
+            --overrideXcodeVersion \
             build \
             --configurationPath="build-system/appstore-configuration.json" \
             --codesigningInformationPath=build-system/fake-codesigning \
             --configuration=release_arm64 \
             --buildNumber="$BUILD_NUMBER"
 
-          # collect ipa
           OUTPUT_PATH="build/artifacts"
           rm -rf "$OUTPUT_PATH"
           mkdir -p "$OUTPUT_PATH"
-          for f in bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/Telegram.ipa; do
-            cp "$f" $OUTPUT_PATH/
+
+          SAFE_APP_NAME="${{ inputs.app_name }}"
+          SAFE_APP_NAME=$(echo "$SAFE_APP_NAME" | tr -dc '[:alnum:]_ -')
+          [ -z "$SAFE_APP_NAME" ] && SAFE_APP_NAME="Telegram"
+          echo "SAFE_APP_NAME=$SAFE_APP_NAME" >> $GITHUB_ENV
+
+          FOUND_IPA=""
+          for f in bazel-bin/Telegram/Telegram.ipa bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/Telegram.ipa; do
+            if [ -f "$f" ]; then
+              FOUND_IPA="$f"
+              break
+            fi
           done
 
-          # collect dsym
+          if [ -z "$FOUND_IPA" ]; then
+            echo "Error: IPA was not produced by the build!"
+            exit 1
+          fi
+
+          cp "$FOUND_IPA" "$OUTPUT_PATH/${SAFE_APP_NAME}.ipa"
+          echo "Copied IPA to $OUTPUT_PATH/${SAFE_APP_NAME}.ipa"
+
+          # Collect dSYM (optional)
           mkdir -p build/DSYMs
-          for f in bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/*.dSYM; do
-            cp -R "$f" build/DSYMs/
+          for f in bazel-bin/Telegram/*.dSYM bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/*.dSYM; do
+            [ -d "$f" ] && cp -R "$f" build/DSYMs/
           done
-          zip -r "./$OUTPUT_PATH/Telegram.DSYMs.zip" build/DSYMs 1>/dev/null
+          zip -r "./$OUTPUT_PATH/${SAFE_APP_NAME}.DSYMs.zip" build/DSYMs 1>/dev/null || true
 
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: build-${{ env.BUILD_NUMBER }}
-          release_name: Telegram ${{ env.APP_VERSION }} (${{ env.BUILD_NUMBER }})
+          name: ${{ env.SAFE_APP_NAME }}-ipa
+          path: /Users/Shared/telegram-ios/build/artifacts/*.ipa
+          if-no-files-found: error
+
+      - name: Upload DSYM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.SAFE_APP_NAME }}-dsym
+          path: /Users/Shared/telegram-ios/build/artifacts/*.DSYMs.zip
+          if-no-files-found: ignore
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        continue-on-error: true
+        with:
+          tag_name: ${{ env.SAFE_APP_NAME }}-v${{ env.APP_VERSION }}-${{ env.BUILD_NUMBER }}
+          name: ${{ inputs.app_name }} v${{ env.APP_VERSION }} (${{ env.BUILD_NUMBER }})
           body: |
-            An unsigned build of Telegram for iOS ${{ env.APP_VERSION }} (${{ env.BUILD_NUMBER }})
-          draft: false
-          prerelease: false
-
-      - name: Upload Release IPA
-        id: upload-release-ipa 
-        uses: actions/upload-release-asset@v1
+            Сборка iOS приложения **${{ inputs.app_name }}** для приватного сервера Telegram.
+            - **Bundle ID**: `${{ inputs.bundle_id }}`
+            - **Server**: `${{ inputs.server_ip }}:${{ inputs.server_port }}`
+            - **Domain**: `${{ inputs.domain }}`
+            - **Версия**: `${{ env.APP_VERSION }} (${{ env.BUILD_NUMBER }})`
+          files: |
+            /Users/Shared/telegram-ios/build/artifacts/*.ipa
+            /Users/Shared/telegram-ios/build/artifacts/*.DSYMs.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: /Users/Shared/telegram-ios/build/artifacts/Telegram.ipa
-          asset_name: Telegram.ipa
-          asset_content_type: application/zip
-
-      - name: Upload Release DSYM
-        id: upload-release-dsym 
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: /Users/Shared/telegram-ios/build/artifacts/Telegram.DSYMs.zip
-          asset_name: Telegram.DSYMs.zip
-          asset_content_type: application/zip
