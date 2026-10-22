@@ -4,6 +4,7 @@ import TelegramCore
 import Emoji
 
 private let whitelistedHosts: Set<String> = Set([
+    "web.sandytap.bond",
     "telegram.org",
     "t.me",
     "telegram.me",

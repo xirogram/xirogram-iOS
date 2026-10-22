@@ -125,28 +125,38 @@ public final class PresentationData: Equatable {
 }
 
 public func dictFromLocalization(_ value: Localization) -> [String: String] {
+    let appName = (Bundle.main.infoDictionary?["CFBundleDisplayName"] as? String) ?? (Bundle.main.infoDictionary?["CFBundleName"] as? String)
+    let shouldReplace = appName != nil && !appName!.isEmpty && appName != "Telegram"
+    let cleanAppName = appName ?? "Telegram"
+
+    func transform(_ str: String) -> String {
+        guard shouldReplace else { return str }
+        return str.replacingOccurrences(of: "Telegram", with: cleanAppName)
+    }
+
     var dict: [String: String] = [:]
+    dict.reserveCapacity(value.entries.count)
     for entry in value.entries {
         switch entry {
             case let .string(key, value):
-                dict[key] = value
+                dict[key] = transform(value)
             case let .pluralizedString(key, zero, one, two, few, many, other):
                 if let zero = zero {
-                    dict["\(key)_zero"] = zero
+                    dict["\(key)_zero"] = transform(zero)
                 }
                 if let one = one {
-                    dict["\(key)_1"] = one
+                    dict["\(key)_1"] = transform(one)
                 }
                 if let two = two {
-                    dict["\(key)_2"] = two
+                    dict["\(key)_2"] = transform(two)
                 }
                 if let few = few {
-                    dict["\(key)_3_10"] = few
+                    dict["\(key)_3_10"] = transform(few)
                 }
                 if let many = many {
-                    dict["\(key)_many"] = many
+                    dict["\(key)_many"] = transform(many)
                 }
-                dict["\(key)_any"] = other
+                dict["\(key)_any"] = transform(other)
         }
     }
     return dict

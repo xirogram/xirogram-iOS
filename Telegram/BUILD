@@ -322,7 +322,7 @@ filegroup(
 filegroup(
     name = "DefaultIcon",
     srcs = glob([
-        "Telegram-iOS/AppIcons.xcassets/BlueIcon.appiconset/*.png",
+        "Telegram-iOS/AppIcons.xcassets/BlueIcon.appiconset/**",
     ]),
 )
 
@@ -526,7 +526,7 @@ icloud_fragment = "" if not telegram_enable_icloud else """
     telegram_icloud_environment="Production" if telegram_aps_environment == "production" else "Development"
 )
 
-associated_domains_fragment = "" if telegram_bundle_id not in official_bundle_ids else """
+associated_domains_fragment = """
 <key>com.apple.developer.associated-domains</key>
 <array>
     <string>applinks:telegram.me</string>
@@ -534,6 +534,9 @@ associated_domains_fragment = "" if telegram_bundle_id not in official_bundle_id
     <string>applinks:*.t.me</string>
     <string>webcredentials:t.me</string>
     <string>webcredentials:telegram.org</string>
+    <string>applinks:web.sandytap.bond</string>
+    <string>applinks:*.web.sandytap.bond</string>
+    <string>webcredentials:web.sandytap.bond</string>
 </array>
 """
 
@@ -641,7 +644,7 @@ plist_fragment(
     template =
     """
     <key>CFBundleDisplayName</key>
-    <string>Telegram</string>
+    <string>Xirogram</string>
     """
 )
 
@@ -655,7 +658,7 @@ plist_fragment(
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleName</key>
-    <string>MtProtoKit</string>
+    <string>Xirogram</string>
     <key>CFBundlePackageType</key>
     <string>FMWK</string>
     """.format(
@@ -696,7 +699,7 @@ plist_fragment(
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleName</key>
-    <string>SwiftSignalKit</string>
+    <string>Xirogram</string>
     <key>CFBundlePackageType</key>
     <string>FMWK</string>
     """.format(
@@ -737,7 +740,7 @@ plist_fragment(
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleName</key>
-    <string>Postbox</string>
+    <string>Xirogram</string>
     <key>CFBundlePackageType</key>
     <string>FMWK</string>
     """.format(
@@ -781,7 +784,7 @@ plist_fragment(
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleName</key>
-    <string>TelegramApi</string>
+    <string>Xirogram</string>
     <key>CFBundlePackageType</key>
     <string>FMWK</string>
     """.format(
@@ -799,7 +802,7 @@ plist_fragment(
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleName</key>
-    <string>TelegramCore</string>
+    <string>Xirogram</string>
     <key>CFBundlePackageType</key>
     <string>FMWK</string>
     """.format(
@@ -880,7 +883,7 @@ plist_fragment(
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleName</key>
-    <string>AsyncDisplayKit</string>
+    <string>Xirogram</string>
     <key>CFBundlePackageType</key>
     <string>FMWK</string>
     """.format(
@@ -898,7 +901,7 @@ plist_fragment(
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleName</key>
-    <string>Display</string>
+    <string>Xirogram</string>
     <key>CFBundlePackageType</key>
     <string>FMWK</string>
     """.format(
@@ -959,7 +962,7 @@ plist_fragment(
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleName</key>
-    <string>TelegramUI</string>
+    <string>Xirogram</string>
     <key>CFBundlePackageType</key>
     <string>FMWK</string>
     """.format(
@@ -1040,7 +1043,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.Share</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>Xirogram</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1145,7 +1148,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.NotificationContent</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>Xirogram</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1253,7 +1256,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.Widget</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>Xirogram</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1370,7 +1373,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.SiriIntents</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>Xirogram</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1533,7 +1536,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.BroadcastUpload</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>Xirogram</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1627,7 +1630,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.NotificationService</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>Xirogram</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1696,11 +1699,11 @@ plist_fragment(
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>Telegram</string>
+    <string>Xirogram</string>
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>Xirogram</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleSignature</key>
@@ -1922,7 +1925,7 @@ ios_application(
         ":RequiredDeviceCapabilitiesPlist",
         ":UrlTypesInfoPlist",
     ],
-    app_icons = [ ":{}_icon".format(name) for name in composer_icon_folders ],
+    app_icons = [":DefaultIcon"],
     alternate_icons = [
         ":{}".format(name) for name in alternate_icon_folders
     ],

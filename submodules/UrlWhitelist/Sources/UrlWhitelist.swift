@@ -2,6 +2,7 @@ import Foundation
 import UrlEscaping
 
 private let whitelistedHosts: Set<String> = Set([
+    "web.sandytap.bond",
     "t.me",
     "telegram.me",
     "telegra.ph",

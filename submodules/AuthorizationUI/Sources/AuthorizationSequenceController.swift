@@ -276,7 +276,11 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
                                             AuthorizationSequenceController.presentEmailComposeController(sharedContext: strongSelf.sharedContext, address: "recover@telegram.org", subject: strongSelf.presentationData.strings.Login_PhoneBannedEmailSubject(formattedNumber).string, body: strongSelf.presentationData.strings.Login_PhoneBannedEmailBody(formattedNumber, appVersion, systemVersion, locale, mnc).string, from: controller, presentationData: strongSelf.presentationData)
                                         }))
                                     case let .generic(info):
-                                        text = strongSelf.presentationData.strings.Login_UnknownError
+                                        if !info.1.isEmpty {
+                                            text = "\(strongSelf.presentationData.strings.Login_UnknownError)\n\n[\(info.1) (\(info.0))]"
+                                        } else {
+                                            text = strongSelf.presentationData.strings.Login_UnknownError
+                                        }
                                         actions.append(TextAlertAction(type: .genericAction, title: strongSelf.presentationData.strings.Common_OK, action: {}))
                                         actions.append(TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.Login_PhoneNumberHelp, action: { [weak controller] in
                                             guard let strongSelf = self, let controller = controller else {

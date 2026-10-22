@@ -1,3 +1,5 @@
+"CFBundleDisplayName" = "Xirogram";
+"CFBundleName" = "Xirogram";
 /* Localized versions of Info.plist keys */
 
 "NSContactsUsageDescription" = "تلگرام به طور مداوم مخاطبین شما را به سرورهای اَبری و رمزگذاری شده خود آپلود می‌کند تا شما بتوانید در تمامی دستگاه‌های خود با دوستانتان ارتباط برقرار کنید.";

@@ -41,7 +41,24 @@ public func formatWithArgumentRanges(_ value: String, _ ranges: [(Int, NSRange)]
     return (result as String, resultingRanges)
 }
 
-public let defaultPresentationStrings = PresentationStrings(primaryComponent: PresentationStrings.Component(languageCode: "en", localizedName: "English", pluralizationRulesCode: nil, dict: NSDictionary(contentsOf: URL(fileURLWithPath: getAppBundle().path(forResource: "Localizable", ofType: "strings", inDirectory: nil, forLocalization: "en")!)) as! [String : String]), secondaryComponent: nil, groupingSeparator: "")
+private func loadDefaultPresentationStringsDict() -> [String: String] {
+    guard let path = getAppBundle().path(forResource: "Localizable", ofType: "strings", inDirectory: nil, forLocalization: "en"),
+          let rawDict = NSDictionary(contentsOf: URL(fileURLWithPath: path)) as? [String: String] else {
+        return [:]
+    }
+    let appName = (Bundle.main.infoDictionary?["CFBundleDisplayName"] as? String) ?? (Bundle.main.infoDictionary?["CFBundleName"] as? String)
+    guard let appName = appName, !appName.isEmpty && appName != "Telegram" else {
+        return rawDict
+    }
+    var dict: [String: String] = [:]
+    dict.reserveCapacity(rawDict.count)
+    for (key, value) in rawDict {
+        dict[key] = value.replacingOccurrences(of: "Telegram", with: appName)
+    }
+    return dict
+}
+
+public let defaultPresentationStrings = PresentationStrings(primaryComponent: PresentationStrings.Component(languageCode: "en", localizedName: "English", pluralizationRulesCode: nil, dict: loadDefaultPresentationStringsDict()), secondaryComponent: nil, groupingSeparator: "")
 
 public func dataSizeString(_ size: Int, forceDecimal: Bool = false, formatting: DataSizeStringFormatting) -> String {
     return dataSizeString(Int64(size), forceDecimal: forceDecimal, formatting: formatting)

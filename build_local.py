@@ -45,9 +45,9 @@ def prompt_input(title: str, prompt: str, default: str = "", required: bool = Tr
         return val
 
 def prompt_rsa_key() -> str:
-    print(f"{BOLD}MTProto RSA публичный ключ сервера (PEM):{RESET}")
-    print(f"  {YELLOW}Подсказка: Вставьте путь к файлу .pem ИЛИ вставьте сам ключ (включая -----BEGIN/END...){RESET}")
-    print(f"  {YELLOW}Если вставляете текст ключа, введите 'EOF' на новой строке, когда закончите:{RESET}")
+    print(f"{BOLD}6. MTProto RSA публичный ключ сервера (PEM):{RESET}")
+    print(f"  {YELLOW}Подсказка: Вставьте путь к файлу .pem (можно перетащить файл сюда){RESET}")
+    print(f"  {YELLOW}ИЛИ просто скопируйте и вставьте текст ключа (включая -----BEGIN/END...):{RESET}")
 
     first_line = input("  Ключ или путь к файлу: ").strip()
     clean_path = first_line.strip("'\"")
@@ -68,13 +68,13 @@ def prompt_rsa_key() -> str:
                 line = input()
             except EOFError:
                 break
-            if line.strip() == "EOF" or "-----END" in line:
-                if line.strip() != "EOF":
-                    lines.append(line)
-                break
             lines.append(line)
+            if "-----END" in line:
+                break
 
-    key_text = "\n".join(lines).strip()
+    # Clean lines and filter out any accidental 'EOF'
+    cleaned_lines = [l.strip() for l in lines if l.strip() and l.strip().upper() != "EOF"]
+    key_text = "\n".join(cleaned_lines).strip()
     if not key_text:
         print(f"  {RED}Ошибка: RSA ключ не может быть пустым!{RESET}")
         return prompt_rsa_key()
@@ -115,30 +115,36 @@ def main():
         default="443"
     )
 
+    server_dc = prompt_input(
+        "5. Номер дата-центра (DC ID)",
+        "Введите ID дата-центра (обычно 1 или 2)",
+        default="2"
+    )
+
     rsa_key = prompt_rsa_key()
 
     api_id = prompt_input(
-        "5. API ID (опционально)",
+        "7. API ID (опционально)",
         "Введите числовой API ID (или Enter для дефолтного)",
         default="8",
         required=False
     )
 
     api_hash = prompt_input(
-        "6. API Hash (опционально)",
+        "8. API Hash (опционально)",
         "Введите API Hash (или Enter для дефолтного)",
         default="7245de8e747a0d6fbe11f7cc14fcc0bb",
         required=False
     )
 
     bundle_id = prompt_input(
-        "7. Bundle ID",
+        "9. Bundle ID",
         "Введите уникальный идентификатор приложения",
         default="ph.telegra.Telegraph"
     )
 
     domain = prompt_input(
-        "8. Домен для ссылок",
+        "10. Домен для ссылок",
         "Введите домен (например, t.me или mydomain.com)",
         default="t.me"
     )
@@ -147,7 +153,7 @@ def main():
     print_header("Параметры сборки")
     print(f"  {BOLD}Название:{RESET}      {app_name}")
     print(f"  {BOLD}Аватар:{RESET}        {avatar}")
-    print(f"  {BOLD}Сервер:{RESET}        {server_ip}:{server_port}")
+    print(f"  {BOLD}Сервер:{RESET}        {server_ip}:{server_port} (DC {server_dc})")
     print(f"  {BOLD}Bundle ID:{RESET}     {bundle_id}")
     print(f"  {BOLD}Домен:{RESET}         {domain}")
     print(f"  {BOLD}API ID / Hash:{RESET} {api_id} / {api_hash[:8]}...")
@@ -181,6 +187,7 @@ def main():
     env["AVATAR_URL"] = avatar
     env["SERVER_IP"] = server_ip
     env["SERVER_PORT"] = server_port
+    env["SERVER_DC"] = server_dc
     env["RSA_PUBLIC_KEY"] = rsa_key
     env["API_ID"] = api_id
     env["API_HASH"] = api_hash

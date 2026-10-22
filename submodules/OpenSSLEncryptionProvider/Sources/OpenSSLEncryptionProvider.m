@@ -361,10 +361,21 @@ NS_ASSUME_NONNULL_BEGIN
     BIO *keyBio = BIO_new(BIO_s_mem());
     NSData *keyData = [publicKey dataUsingEncoding:NSUTF8StringEncoding];
     if (keyData == nil) {
+        BIO_free(keyBio);
         return nil;
     }
     BIO_write(keyBio, keyData.bytes, (int)keyData.length);
     RSA *rsaKey = PEM_read_bio_RSAPublicKey(keyBio, NULL, NULL, NULL);
+    if (rsaKey == NULL) {
+        BIO_free(keyBio);
+        keyBio = BIO_new(BIO_s_mem());
+        BIO_write(keyBio, keyData.bytes, (int)keyData.length);
+        EVP_PKEY *pubkey = PEM_read_bio_PUBKEY(keyBio, NULL, NULL, NULL);
+        if (pubkey != NULL) {
+            rsaKey = EVP_PKEY_get1_RSA(pubkey);
+            EVP_PKEY_free(pubkey);
+        }
+    }
     BIO_free(keyBio);
     if (rsaKey == nil) {
         return nil;
@@ -377,13 +388,24 @@ NS_ASSUME_NONNULL_BEGIN
     const char *keyData = [publicKey UTF8String];
     BIO_write(keyBio, keyData, (int)publicKey.length);
     RSA *rsaKey = PEM_read_bio_RSAPublicKey(keyBio, NULL, NULL, NULL);
+    if (rsaKey == NULL) {
+        BIO_free(keyBio);
+        keyBio = BIO_new(BIO_s_mem());
+        BIO_write(keyBio, keyData, (int)publicKey.length);
+        EVP_PKEY *pubkey = PEM_read_bio_PUBKEY(keyBio, NULL, NULL, NULL);
+        if (pubkey != NULL) {
+            rsaKey = EVP_PKEY_get1_RSA(pubkey);
+            EVP_PKEY_free(pubkey);
+        }
+    }
     BIO_free(keyBio);
+    if (rsaKey == NULL) {
+        return nil;
+    }
     
     BN_CTX *ctx = BN_CTX_new();
     BIGNUM *a = BN_bin2bn(data.bytes, (int)data.length, NULL);
     BIGNUM *r = BN_new();
-    
-    
     
     BN_mod_exp(r, a, RSA_get0_e(rsaKey), RSA_get0_n(rsaKey), ctx);
     

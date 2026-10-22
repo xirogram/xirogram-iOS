@@ -10,10 +10,12 @@ import AccountContext
 import WalletContext
 
 private let baseTelegramMePaths = [
+    "web.sandytap.bond",
     "telegram.me",
     "t.me", "telegram.dog"
 ]
 private let telegramWebShortLinkHosts = [
+    "web.sandytap.bond",
     "a.t.me", 
     "k.t.me",
     "z.t.me"

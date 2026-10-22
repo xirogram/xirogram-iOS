@@ -227,51 +227,119 @@ def resign_fake_provisioning_profiles(bundle_id: str):
             )
     print("[*] Resigned all fake provisioning profiles.")
 
-def configure_network(server_ip: str, server_port: str):
+def extract_clean_pem(raw_key: str) -> str:
+    lines = [line.strip() for line in raw_key.replace("\r\n", "\n").replace("\\n", "\n").splitlines()]
+    lines = [l for l in lines if l and l.upper() != "EOF"]
+
+    begin_idx = -1
+    end_idx = -1
+    for i, l in enumerate(lines):
+        if "-----BEGIN" in l:
+            begin_idx = i
+        if "-----END" in l:
+            end_idx = i
+            break
+
+    if begin_idx != -1 and end_idx != -1 and end_idx >= begin_idx:
+        lines = lines[begin_idx:end_idx + 1]
+
+    return "\n".join(lines).strip()
+
+def ensure_pkcs1_rsa_key(pem_str: str) -> str:
+    clean_pem = extract_clean_pem(pem_str)
+    if "BEGIN RSA PUBLIC KEY" in clean_pem:
+        return clean_pem
+
+    # Try converting PKCS#8 (BEGIN PUBLIC KEY) to PKCS#1 (BEGIN RSA PUBLIC KEY)
+    try:
+        res = subprocess.run(
+            ["openssl", "rsa", "-pubin", "-RSAPublicKey_out"],
+            input=clean_pem.encode("utf-8"),
+            capture_output=True,
+            check=True
+        )
+        converted = res.stdout.decode("utf-8").strip()
+        if "BEGIN RSA PUBLIC KEY" in converted:
+            print("[*] Converted PKCS#8 public key to PKCS#1 RSA format.")
+            return converted
+    except Exception as e:
+        print(f"[!] Note: OpenSSL PKCS#1 conversion was skipped: {e}")
+
+    return clean_pem
+
+def configure_network(server_ip: str, server_port: str, server_dc: str = "2"):
+    # 1. Update initialDatacenterId in Account.swift
+    account_path = ROOT / "submodules/TelegramCore/Sources/Account/Account.swift"
+    if account_path.exists():
+        acc_content = account_path.read_text()
+        dc_block_pattern = re.compile(
+            r'#if DEBUG\s*let initialDatacenterId:\s*Int\s*=\s*\d+\s*#else\s*let initialDatacenterId:\s*Int\s*=\s*\d+\s*#endif',
+            re.DOTALL
+        )
+        new_dc_block = (
+            f"#if DEBUG\n"
+            f"                        let initialDatacenterId: Int = {server_dc}\n"
+            f"                        #else\n"
+            f"                        let initialDatacenterId: Int = {server_dc}\n"
+            f"                        #endif"
+        )
+        if dc_block_pattern.search(acc_content):
+            acc_content = dc_block_pattern.sub(new_dc_block, acc_content, count=1)
+            account_path.write_text(acc_content)
+            print(f"[*] Set initialDatacenterId in Account.swift to DC {server_dc}")
+        else:
+            single_pattern = re.compile(r'let initialDatacenterId:\s*Int\s*=\s*\d+')
+            if single_pattern.search(acc_content):
+                acc_content = single_pattern.sub(f"let initialDatacenterId: Int = {server_dc}", acc_content, count=1)
+                account_path.write_text(acc_content)
+                print(f"[*] Updated initialDatacenterId in Account.swift to DC {server_dc}")
+
+    # 2. Update Network.swift
     net_path = ROOT / "submodules/TelegramCore/Sources/Network/Network.swift"
     content = net_path.read_text()
 
-    # 1. Set datacenterAddressOverrides for DC 1 through 5
-    needle = "            apiEnvironment.apiId = arguments.apiId\n"
-    dc_overrides = (
-        f"            apiEnvironment.datacenterAddressOverrides = [\n"
-        f"                NSNumber(value: 1): MTDatacenterAddress(ip: \"{server_ip}\", port: {server_port}, preferForMedia: false, restrictToTcp: true, cdn: false, preferForProxy: false, secret: nil),\n"
-        f"                NSNumber(value: 2): MTDatacenterAddress(ip: \"{server_ip}\", port: {server_port}, preferForMedia: false, restrictToTcp: true, cdn: false, preferForProxy: false, secret: nil),\n"
-        f"                NSNumber(value: 3): MTDatacenterAddress(ip: \"{server_ip}\", port: {server_port}, preferForMedia: false, restrictToTcp: true, cdn: false, preferForProxy: false, secret: nil),\n"
-        f"                NSNumber(value: 4): MTDatacenterAddress(ip: \"{server_ip}\", port: {server_port}, preferForMedia: false, restrictToTcp: true, cdn: false, preferForProxy: false, secret: nil),\n"
-        f"                NSNumber(value: 5): MTDatacenterAddress(ip: \"{server_ip}\", port: {server_port}, preferForMedia: false, restrictToTcp: true, cdn: false, preferForProxy: false, secret: nil)\n"
-        f"            ]\n"
-    )
+    dc_set = sorted(list({1, 2, 3, 4, 5, int(server_dc)}))
+    override_entries = []
+    for dc in dc_set:
+        override_entries.append(
+            f'                NSNumber(value: {dc}): MTDatacenterAddress(ip: "{server_ip}", port: {server_port}, preferForMedia: false, restrictToTcp: false, cdn: false, preferForProxy: false, secret: nil)'
+        )
+    dc_overrides = "            apiEnvironment.datacenterAddressOverrides = [\n" + ",\n".join(override_entries) + "\n            ]\n"
 
-    if "apiEnvironment.datacenterAddressOverrides" not in content:
+    existing_overrides_pattern = re.compile(
+        r'[ \t]*apiEnvironment\.datacenterAddressOverrides\s*=.*?(?=\n\s*apiEnvironment\.langPack)',
+        re.DOTALL
+    )
+    if existing_overrides_pattern.search(content):
+        content = existing_overrides_pattern.sub(dc_overrides.rstrip(), content, count=1)
+    else:
+        needle = "            apiEnvironment.apiId = arguments.apiId\n"
         content = content.replace(needle, needle + dc_overrides, 1)
 
-    # 2. Update seed addresses and default port
-    seed_pattern = re.compile(r'let seedAddressList:\s*\[Int:\s*\[String\]\]\s*if testingEnvironment\s*\{.*?\}\s*else\s*\{.*?\}', re.DOTALL)
-    new_seed = (
-        f'let seedAddressList: [Int: [String]] = [\n'
-        f'                1: ["{server_ip}"],\n'
-        f'                2: ["{server_ip}"],\n'
-        f'                3: ["{server_ip}"],\n'
-        f'                4: ["{server_ip}"],\n'
-        f'                5: ["{server_ip}"]\n'
-        f'            ]'
-    )
-    content = seed_pattern.sub(lambda m: new_seed, content)
+    # 3. Update seed addresses and default port
+    seed_entries = [f'                {dc}: ["{server_ip}"]' for dc in dc_set]
+    new_seed = 'let seedAddressList: [Int: [String]] = [\n' + ",\n".join(seed_entries) + '\n            ]'
 
-    content = content.replace(
-        'MTDatacenterAddress(ip: $0, port: 443,',
-        f'MTDatacenterAddress(ip: $0, port: {server_port},'
+    seed_pattern = re.compile(
+        r'let seedAddressList:\s*\[Int:\s*\[String\]\].*?(?=\n\s*for \(id, ips\) in seedAddressList)',
+        re.DOTALL
+    )
+    content = seed_pattern.sub(lambda m: new_seed, content, count=1)
+
+    content = re.sub(
+        r'MTDatacenterAddress\(ip: \$0, port: \d+,',
+        f'MTDatacenterAddress(ip: $0, port: {server_port},',
+        content
     )
 
     net_path.write_text(content)
-    print(f"[*] Configured network endpoints for server {server_ip}:{server_port}")
+    print(f"[*] Configured network endpoints for server {server_ip}:{server_port} on DC {server_dc}")
 
 def configure_rsa_key(rsa_key: str):
     auth_service_path = ROOT / "submodules/MtProtoKit/Sources/MTDatacenterAuthMessageService.m"
     content = auth_service_path.read_text()
 
-    clean_key = rsa_key.strip().replace("\r\n", "\n").replace("\\n", "\n")
+    clean_key = ensure_pkcs1_rsa_key(rsa_key)
     lines = [line.strip() for line in clean_key.splitlines() if line.strip()]
     objc_key_lines = "\n            ".join([f'@"{l}\\n"' for l in lines])
 
@@ -285,7 +353,7 @@ def configure_rsa_key(rsa_key: str):
     )
 
     pattern = re.compile(
-        r'dispatch_once\(&onceToken,\s*\^\{\s*testingPublicKeys\s*=\s*@\[.*?\];\s*productionPublicKeys\s*=\s*@\[.*?\];\s*\}\);',
+        r'dispatch_once\(&onceToken,\s*\^\{\s*(?:testingPublicKeys|productionPublicKeys)\s*=\s*@\[.*?\];\s*(?:testingPublicKeys|productionPublicKeys)\s*=\s*@\[.*?\];\s*\}\);',
         re.DOTALL
     )
 
@@ -297,21 +365,77 @@ def configure_rsa_key(rsa_key: str):
 
     new_content, count = pattern.subn(lambda m: new_dispatch_block, content)
     if count == 0:
-        print("[!] Warning: could not regex replace defaultPublicKeys in MTDatacenterAuthMessageService.m; attempting fallback replace")
         idx = content.find("static NSArray<MTDatacenterAuthPublicKey *> *defaultPublicKeys(bool isProduction) {")
         if idx != -1:
             end_idx = content.find("if (isProduction) {", idx)
             if end_idx != -1:
-                content = content[:idx] + (
+                new_content = content[:idx] + (
                     "static NSArray<MTDatacenterAuthPublicKey *> *defaultPublicKeys(bool isProduction) {\n"
                     "    static NSArray<MTDatacenterAuthPublicKey *> *testingPublicKeys = nil;\n"
                     "    static NSArray<MTDatacenterAuthPublicKey *> *productionPublicKeys = nil;\n"
                     "    static dispatch_once_t onceToken;\n"
                     f"{new_dispatch_block}\n    "
                 ) + content[end_idx:]
-                new_content = content
     auth_service_path.write_text(new_content)
     print("[*] Configured custom MTProto RSA public key.")
+
+def rebrand_strings_file(file_path: Path, app_name: str):
+    if not file_path.exists():
+        return
+    content = file_path.read_text(encoding="utf-8")
+
+    def replace_value(match):
+        key = match.group(1)
+        val = match.group(2)
+        new_val = re.sub(r'\bTelegram\b(?!\.(org|me|dog|com))', app_name, val)
+        return f'{key}{new_val}";'
+
+    pattern = re.compile(r'("[^"]+"\s*=\s*")((?:[^"\\]|\\.)*)";')
+    new_content = pattern.sub(replace_value, content)
+    file_path.write_text(new_content, encoding="utf-8")
+
+def rebrand_app_ui(app_name: str):
+    print(f"[*] Rebranding in-app UI to '{app_name}'...")
+    strings_targets = [
+        ROOT / "Telegram/Telegram-iOS/en.lproj/Localizable.strings",
+        ROOT / "Telegram/Share/en.lproj/Localizable.strings",
+        ROOT / "Telegram/WidgetKitWidget/en.lproj/Localizable.strings"
+    ]
+    for target in strings_targets:
+        rebrand_strings_file(target, app_name)
+
+    for infoplist in ROOT.glob("Telegram/Telegram-iOS/*.lproj/InfoPlist.strings"):
+        rebrand_strings_file(infoplist, app_name)
+        text = infoplist.read_text(encoding="utf-8")
+        display_line = f'"CFBundleDisplayName" = "{app_name}";'
+        name_line = f'"CFBundleName" = "{app_name}";'
+        lines_to_add = []
+        if '"CFBundleDisplayName"' not in text:
+            lines_to_add.append(display_line)
+        if '"CFBundleName"' not in text:
+            lines_to_add.append(name_line)
+        if lines_to_add:
+            infoplist.write_text("\n".join(lines_to_add) + "\n" + text, encoding="utf-8")
+
+    for infoplist in ROOT.glob("Telegram/WidgetKitWidget/*.lproj/InfoPlist.strings"):
+        text = infoplist.read_text(encoding="utf-8")
+        display_line = f'"CFBundleDisplayName" = "{app_name}";'
+        name_line = f'"CFBundleName" = "{app_name}";'
+        lines_to_add = []
+        if '"CFBundleDisplayName"' not in text:
+            lines_to_add.append(display_line)
+        if '"CFBundleName"' not in text:
+            lines_to_add.append(name_line)
+        if lines_to_add:
+            infoplist.write_text("\n".join(lines_to_add) + "\n" + text, encoding="utf-8")
+
+    tg_loc_path = ROOT / "submodules/LegacyComponents/Sources/TGLocalization.m"
+    if tg_loc_path.exists():
+        t = tg_loc_path.read_text(encoding="utf-8")
+        t = re.sub(r'appTitle\s*=\s*@"[^"]+";', f'appTitle = @"{app_name}";', t)
+        tg_loc_path.write_text(t, encoding="utf-8")
+
+    print("[*] Completed in-app UI rebranding.")
 
 def configure_app_name(app_name: str):
     escaped_name = xml.sax.saxutils.escape(app_name)
@@ -319,7 +443,16 @@ def configure_app_name(app_name: str):
     # 1. Telegram/BUILD
     build_path = ROOT / "Telegram/BUILD"
     build_content = build_path.read_text()
-    build_content = build_content.replace("<string>Telegram</string>", f"<string>{escaped_name}</string>")
+    build_content = re.sub(
+        r'(<key>CFBundleDisplayName</key>\s*<string>)[^<]*(</string>)',
+        rf'\g<1>{escaped_name}\2',
+        build_content
+    )
+    build_content = re.sub(
+        r'(<key>CFBundleName</key>\s*<string>)[^<]*(</string>)',
+        rf'\g<1>{escaped_name}\2',
+        build_content
+    )
     build_path.write_text(build_content)
 
     # 2. Info.plist & InfoBazel.plist
@@ -329,12 +462,9 @@ def configure_app_name(app_name: str):
             s = s.replace("<string>${APP_NAME}</string>", f"<string>{escaped_name}</string>")
             p.write_text(s)
 
-    # 3. Localized strings (ar, ko)
-    for p in [ROOT / "Telegram/Telegram-iOS/ar.lproj/InfoPlist.strings", ROOT / "Telegram/Telegram-iOS/ko.lproj/InfoPlist.strings"]:
-        if p.exists():
-            p.write_text(f'"CFBundleDisplayName" = "{app_name}";\n')
-
+    rebrand_app_ui(app_name)
     print(f"[*] Configured app name to '{app_name}'")
+
 
 def configure_domain(domain: str):
     # 1. UrlHandling.swift
@@ -479,6 +609,8 @@ def main():
     api_id = get_optional("API_ID", "8")
     api_hash = get_optional("API_HASH", "7245de8e747a0d6fbe11f7cc14fcc0bb")
 
+    server_dc = get_optional("SERVER_DC", "2")
+
     # Validation
     if not re.fullmatch(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", bundle_id):
         print(f"Error: BUNDLE_ID '{bundle_id}' is invalid. Example: com.example.telegram", file=sys.stderr)
@@ -488,19 +620,23 @@ def main():
         print(f"Error: SERVER_PORT '{server_port}' must be an integer between 1 and 65535", file=sys.stderr)
         sys.exit(1)
 
+    if not server_dc.isdigit() or not (1 <= int(server_dc) <= 255):
+        print(f"Error: SERVER_DC '{server_dc}' must be an integer between 1 and 255 (e.g. 1 or 2)", file=sys.stderr)
+        sys.exit(1)
+
     if "BEGIN RSA PUBLIC KEY" not in rsa_public_key and "BEGIN PUBLIC KEY" not in rsa_public_key:
         print("Error: RSA_PUBLIC_KEY must be in PEM format ('BEGIN RSA PUBLIC KEY' or 'BEGIN PUBLIC KEY')", file=sys.stderr)
         sys.exit(1)
 
     print(f"App Name: {app_name}")
     print(f"Bundle ID: {bundle_id}")
-    print(f"Server: {server_ip}:{server_port}")
+    print(f"Server: {server_ip}:{server_port} (DC {server_dc})")
     print(f"Domain: {domain}")
     print(f"API ID: {api_id}")
 
     configure_build_files(bundle_id, api_id, api_hash, domain)
     configure_app_name(app_name)
-    configure_network(server_ip, server_port)
+    configure_network(server_ip, server_port, server_dc)
     configure_rsa_key(rsa_public_key)
     configure_domain(domain)
     resign_fake_provisioning_profiles(bundle_id)
