@@ -44,22 +44,31 @@ def sanitize_domain(d: str) -> str:
     return clean.rstrip('/')
 
 def convert_and_apply_icons(avatar_url: str):
-    print(f"[*] Downloading app icon from: {avatar_url}")
-    req = urllib.request.Request(
-        avatar_url,
-        headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'}
-    )
-    import ssl
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    try:
-        with urllib.request.urlopen(req, timeout=45, context=ctx) as resp:
-            raw_bytes = resp.read()
-    except Exception as e:
-        print(f"[!] urllib download failed ({e}), falling back to curl...")
-        res = subprocess.run(["curl", "-sSLk", avatar_url], capture_output=True, check=True)
-        raw_bytes = res.stdout
+    clean_path = avatar_url.strip().strip("'\"")
+    if clean_path.startswith("file://"):
+        clean_path = clean_path[len("file://"):]
+    local_path = Path(os.path.expanduser(clean_path))
+
+    if local_path.is_file():
+        print(f"[*] Reading local app icon from: {local_path}")
+        raw_bytes = local_path.read_bytes()
+    else:
+        print(f"[*] Downloading app icon from: {avatar_url}")
+        req = urllib.request.Request(
+            avatar_url,
+            headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'}
+        )
+        import ssl
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        try:
+            with urllib.request.urlopen(req, timeout=45, context=ctx) as resp:
+                raw_bytes = resp.read()
+        except Exception as e:
+            print(f"[!] urllib download failed ({e}), falling back to curl...")
+            res = subprocess.run(["curl", "-sSLk", avatar_url], capture_output=True, check=True)
+            raw_bytes = res.stdout
 
     with tempfile.TemporaryDirectory() as td:
         raw_file = Path(td) / "raw_avatar"
