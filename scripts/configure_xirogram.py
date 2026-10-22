@@ -49,8 +49,17 @@ def convert_and_apply_icons(avatar_url: str):
         avatar_url,
         headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'}
     )
-    with urllib.request.urlopen(req, timeout=45) as resp:
-        raw_bytes = resp.read()
+    import ssl
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    try:
+        with urllib.request.urlopen(req, timeout=45, context=ctx) as resp:
+            raw_bytes = resp.read()
+    except Exception as e:
+        print(f"[!] urllib download failed ({e}), falling back to curl...")
+        res = subprocess.run(["curl", "-sSLk", avatar_url], capture_output=True, check=True)
+        raw_bytes = res.stdout
 
     with tempfile.TemporaryDirectory() as td:
         raw_file = Path(td) / "raw_avatar"
@@ -100,6 +109,9 @@ def convert_and_apply_icons(avatar_url: str):
         # Target asset catalogs to update
         catalogs = [
             ROOT / "Telegram/Telegram-iOS/AppIcons.xcassets/BlueIcon.appiconset",
+            ROOT / "Telegram/Telegram-iOS/AppIcons.xcassets/BlueFilledIcon.appiconset",
+            ROOT / "Telegram/Telegram-iOS/AppIcons.xcassets/BlackIcon.appiconset",
+            ROOT / "Telegram/Telegram-iOS/AppIcons.xcassets/BlackFilledIcon.appiconset",
             ROOT / "Telegram/Telegram-iOS/DefaultAppIcon.xcassets/AppIconLLC.appiconset"
         ]
 
@@ -108,6 +120,26 @@ def convert_and_apply_icons(avatar_url: str):
             if not contents_file.exists():
                 continue
             cat_data = json.loads(contents_file.read_text())
+            modified_contents = False
+            for img_entry in cat_data.get("images", []):
+                # 76x76@1x causes actool error in Xcode 16/26 with iOS 15+ target
+                if img_entry.get("size") == "76x76" and img_entry.get("scale") == "1x" and img_entry.get("idiom") == "ipad":
+                    old_fn = img_entry.pop("filename", None)
+                    if old_fn:
+                        old_file = cat_dir / old_fn
+                        if old_file.exists():
+                            old_file.unlink()
+                        modified_contents = True
+
+                # Ensure 1024x1024 marketing icon has a filename
+                if img_entry.get("size") == "1024x1024" and img_entry.get("idiom") == "ios-marketing":
+                    if not img_entry.get("filename"):
+                        img_entry["filename"] = "IconMarketing@1024x1024.png"
+                        modified_contents = True
+
+            if modified_contents:
+                contents_file.write_text(json.dumps(cat_data, indent=2))
+
             for img_entry in cat_data.get("images", []):
                 fn = img_entry.get("filename")
                 if not fn:
