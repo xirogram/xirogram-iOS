@@ -48,7 +48,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-26
 
     steps:
       - name: Checkout repository
@@ -59,11 +59,27 @@ jobs:
 
       - name: Select Xcode version
         run: |
+          echo "=== Available Xcode versions ==="
+          ls -d /Applications/Xcode* 2>/dev/null || true
+
           XCODE_VERSION=$(cat versions.json | python3 -c 'import json,sys;obj=json.load(sys.stdin);print(obj.get("xcode", ""));')
-          if [ -d "/Applications/Xcode_${XCODE_VERSION}.app" ]; then
-            sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer"
-          elif [ -d "/Applications/Xcode.app" ]; then
-            sudo xcode-select -s "/Applications/Xcode.app/Contents/Developer"
+          TARGET_XCODE=""
+
+          if [ -n "$XCODE_VERSION" ] && [ -d "/Applications/Xcode_${XCODE_VERSION}.app" ]; then
+            TARGET_XCODE="/Applications/Xcode_${XCODE_VERSION}.app"
+          else
+            MAJOR="${XCODE_VERSION%%.*}"
+            MATCH=$(ls -d /Applications/Xcode_${MAJOR}*.app 2>/dev/null | sort -V | tail -n 1)
+            if [ -n "$MATCH" ] && [ -d "$MATCH" ]; then
+              TARGET_XCODE="$MATCH"
+            elif [ -d "/Applications/Xcode.app" ]; then
+              TARGET_XCODE="/Applications/Xcode.app"
+            fi
+          fi
+
+          if [ -n "$TARGET_XCODE" ]; then
+            echo "Selecting $TARGET_XCODE"
+            sudo xcode-select -s "$TARGET_XCODE/Contents/Developer"
           fi
           xcodebuild -version
 

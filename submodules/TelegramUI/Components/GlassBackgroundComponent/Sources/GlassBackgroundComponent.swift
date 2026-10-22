@@ -1691,7 +1691,7 @@ public final class GlassContextExtractableContainer: UIView, ContextExtractableC
                 tintColor: normalParams.tintColor,
                 isInteractive: normalParams.isInteractive,
                 isVisible: normalParams.isVisible,
-                transition: mappedTransition,
+                transition: mappedTransition
             )
         case let .extracted(size, cornerRadius, extractionState):
             switch extractionState {
