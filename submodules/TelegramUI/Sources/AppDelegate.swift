@@ -559,7 +559,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         
         let baseAppBundleId = Bundle.main.bundleIdentifier!
         let appGroupName = "group.\(baseAppBundleId)"
-        try! PasscodeEnvironment.shared.configure(PasscodeConfiguration(appGroupIdentifier: appGroupName, processRole: .mainApp, biometricKeychainService: walletBiometricKeychainService), privateAccessGroup: {
+        try? PasscodeEnvironment.shared.configure(PasscodeConfiguration(appGroupIdentifier: appGroupName, processRole: .mainApp, biometricKeychainService: walletBiometricKeychainService), privateAccessGroup: {
             BuildConfig.keychainAccessGroup(baseAppBundleId: baseAppBundleId)
         })
         let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
@@ -685,9 +685,14 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             networkEngineFactory: RustNetworkEngineFactory()
         )
         
-        guard let appGroupUrl = maybeAppGroupUrl else {
-            self.mainWindow?.presentNative(UIAlertController(title: nil, message: "Error 2", preferredStyle: .alert))
-            return true
+        let appGroupUrl: URL
+        if let url = maybeAppGroupUrl {
+            appGroupUrl = url
+        } else {
+            let appSupportUrl = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            let fallbackGroupUrl = appSupportUrl.appendingPathComponent("TelegramAppGroup")
+            try? FileManager.default.createDirectory(at: fallbackGroupUrl, withIntermediateDirectories: true, attributes: nil)
+            appGroupUrl = fallbackGroupUrl
         }
         
         var isDebugConfiguration = false
