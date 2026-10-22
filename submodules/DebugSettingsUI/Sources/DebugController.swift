@@ -1742,6 +1742,7 @@ private enum DebugControllerEntry: ItemListNodeEntry {
             let bundle = Bundle.main
             let bundleId = bundle.bundleIdentifier ?? ""
             let bundleVersion = bundle.infoDictionary?["CFBundleShortVersionString"] ?? ""
+            let bundleBuild = bundle.infoDictionary?[kCFBundleVersionKey as String] ?? ""
             let appTitle = (bundle.infoDictionary?["CFBundleDisplayName"] as? String) ?? (bundle.infoDictionary?["CFBundleName"] as? String) ?? "Telegram"
             return ItemListTextItem(presentationData: presentationData, text: .plain("\(appTitle) for iOS \(bundleVersion) (\(bundleBuild))\n\(bundleId)"), sectionId: self.section, textAlignment: .center)
         case .collectCpuProfile:
